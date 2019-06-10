@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cloudformation stack for detecting local user creation
+  AccountId:
+    Description: Provide the AWS Account ID
+    Type: String
+  SNSTopic:
+    Description: Provide the SNS Topic ARN
+    Type: String
+  LambdaS3Bucket:
+    Description: Name of the S3 bucket where the lambda function is stored
+    Type: String
+  LambdaS3Object:
+    Description: Name of the S3 object of the Lambda function (zip file)
+    Type: String
+  RevertLogBucket: Name of the S3 bucket where the revert log will be stored
+Resources:
+  EventRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: A CloudWatch Event Rule that detects user creation
+      EventPattern:
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          eventName:
+            - CreateUser
+            - UpdateUser
+            - AttachUserPolicy
+            - DetachUserPolicy
+            - PutUserPolicy
+            - CreateAccessKey
+            - UpdateAccessKe
+
+      State: ENABLED
+      Name: !Sub '${AWS::StackName}-UserCreationRule'
+      Targets:
+        - Arn: !GetAtt 
+            - CreateUserLambda
+            - Arn
+          Id: !Ref 'AWS::StackName'
+  CreateUserLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Object
+      Handler: create_user_lambda.lambda_handler
+      Role: !GetAtt 
+        - LambdaUserCreationRole
+        - Arn
+      Runtime: python3.7
+      Environment:
+        Variables:
+          SNSARN: !Ref SNSTopic
+          LOGS_BUCKET: !Ref RevertLogBucket
+  LambdaCreateUserRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      RoleName: !Sub '${AWS::StackName}-CreateUserRole'
+  LambdaCreateUserPolicy:
+    Type: 'AWS::IAM::Policy'
+    DependsOn: LambdaCreateUserRole
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: VisualEditor0
+            Effect: Allow
+            Action:
+              - 'lambda:InvokeFunction'
+            Resource:
+              - !Join 
+                - ''
+                - - 'arn:aws:lambda:*'
+          - Sid: VisualEditor1
+            Effect: Allow
+            Action:
+              - 'logs:CreateLogStream'
+              - 'logs:CreateLogGroup'
+              - 'logs:PutLogEvents'
+            Resource:
+              - 'arn:aws:logs:*:*:*'
+          - Sid: VisualEditor2
+            Effect: Allow
+            Action:
+              - 'sns:Publish'
+            Resource:
+              - 'arn:aws:sns:*:*:*'
+      PolicyName: !Sub '${AWS::StackName}-LambdaCreateUserPolicy'
+      Roles:
+        - !Ref LambdaCreateUserRole
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt 
+        - CreateUserLambda
+        - Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt 
+        - EventRule
+        - Arn
+Outputs:
+  EventRule:
+    Value: !Ref EventRule
+  CreateUserLambda:
+    Value: !Ref CreateUserLambda

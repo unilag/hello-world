@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Cloudformation stack for detecting local user creation
+Parameters:
   AccountId:
     Description: Provide the AWS Account ID
     Type: String
@@ -12,7 +13,9 @@ Description: Cloudformation stack for detecting local user creation
   LambdaS3Object:
     Description: Name of the S3 object of the Lambda function (zip file)
     Type: String
-  RevertLogBucket: Name of the S3 bucket where the revert log will be stored
+  RevertLogBucket: 
+    Description: Name of the S3 bucket where the revert log will be stored
+    Type: String
 Resources:
   EventRule:
     Type: 'AWS::Events::Rule'
@@ -26,12 +29,7 @@ Resources:
             - iam.amazonaws.com
           eventName:
             - CreateUser
-            - UpdateUser
-            - AttachUserPolicy
-            - DetachUserPolicy
-            - PutUserPolicy
             - CreateAccessKey
-            - UpdateAccessKe
 
       State: ENABLED
       Name: !Sub '${AWS::StackName}-UserCreationRule'
@@ -48,7 +46,7 @@ Resources:
         S3Key: !Ref LambdaS3Object
       Handler: create_user_lambda.lambda_handler
       Role: !GetAtt 
-        - LambdaUserCreationRole
+        - LambdaCreateUserRole
         - Arn
       Runtime: python3.7
       Environment:
@@ -79,9 +77,7 @@ Resources:
             Action:
               - 'lambda:InvokeFunction'
             Resource:
-              - !Join 
-                - ''
-                - - 'arn:aws:lambda:*'
+              - 'arn:aws:lambda:*'
           - Sid: VisualEditor1
             Effect: Allow
             Action:

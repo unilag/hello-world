@@ -1,0 +1,276 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cloudformation stack for creating a new VPC with public-private subnets
+Parameters:
+  AccountId:
+    Description: Provide the AWS Account ID
+    Type: String
+Resources:
+  ManagementVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: 10.0.0.0/24
+      MapPublicIpOnLaunch: false
+      VpcId:
+        Ref: ManagementVPC
+      Tags:
+        - Key: Name
+          Value: Public Subnet AZ A
+      AvailabilityZone:
+        'Fn::Select':
+          - '0'
+          - 'Fn::GetAZs':
+              Ref: 'AWS::Region'
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: false
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value: Public Subnet AZ B
+      AvailabilityZone:
+        'Fn::Select':
+          - '1'
+          - 'Fn::GetAZs':
+              Ref: 'AWS::Region'
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: 10.0.10.0/24
+      MapPublicIpOnLaunch: false
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value: Private Subnet AZ A
+      AvailabilityZone:
+        'Fn::Select':
+          - '0'
+          - 'Fn::GetAZs':
+              Ref: 'AWS::Region'
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: 10.0.11.0/24
+      MapPublicIpOnLaunch: false
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value: Private Subnet AZ B
+      AvailabilityZone:
+        'Fn::Select':
+          - '1'
+          - 'Fn::GetAZs':
+              Ref: 'AWS::Region'
+  RouteTablePublic:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+  RouteTablePublicAssociation1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId:
+        Ref: RouteTablePublic
+      SubnetId:
+        Ref: PublicSubnet1
+  RouteTablePublicAssociation2:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId:
+        Ref: RouteTablePublic
+      SubnetId:
+        Ref: PublicSubnet2
+  RouteTablePublicRoute0:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId:
+        Ref: RouteTablePublic
+      GatewayId:
+        Ref: Igw
+  RouteTablePrivate1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value: Private Route Table A
+  RouteTablePrivate1Association1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId:
+        Ref: RouteTablePrivate1
+      SubnetId:
+        Ref: PrivateSubnet1
+  RouteTablePrivate1Route0:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId:
+        Ref: RouteTablePrivate1
+      NatGatewayId:
+        Ref: NatGw1
+  RouteTablePrivate2:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value: Private Route Table B
+  RouteTablePrivate2Association1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId:
+        Ref: RouteTablePrivate2
+      SubnetId:
+        Ref: PrivateSubnet2
+  RouteTablePrivate2Route0:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId:
+        Ref: RouteTablePrivate2
+      NatGatewayId:
+        Ref: NatGw1
+  Igw:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties: {}
+  IGWAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId:
+        Ref: VPC
+      InternetGatewayId:
+        Ref: Igw
+  NatGw1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      SubnetId:
+        Ref: PublicSubnet1
+      AllocationId:
+        'Fn::GetAtt':
+          - NatGw1ElasticIP
+          - AllocationId
+      Tags:
+        - Key: Name
+          Value: NAT GW A
+  NatGw1ElasticIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+Parameters: {}
+Metadata: {}
+Conditions: {}
+
+
+
+Resources:
+  NaricVPC:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: A CloudWatch Event Rule that detects user creation
+      EventPattern:
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - iam.amazonaws.com
+          eventName:
+            - CreateUser
+            - CreateAccessKey
+
+      State: ENABLED
+      Name: !Sub '${AWS::StackName}-UserCreationRule'
+      Targets:
+        - Arn: !GetAtt 
+            - CreateUserLambda
+            - Arn
+          Id: !Ref 'AWS::StackName'
+  CreateUserLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Object
+      Handler: create_user_lambda.lambda_handler
+      Role: !GetAtt 
+        - LambdaCreateUserRole
+        - Arn
+      Runtime: python3.7
+      Environment:
+        Variables:
+          SNSARN: !Ref SNSTopic
+          LOGS_BUCKET: !Ref RevertLogBucket
+  LambdaCreateUserRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      RoleName: !Sub '${AWS::StackName}-CreateUserRole'
+  LambdaCreateUserPolicy:
+    Type: 'AWS::IAM::Policy'
+    DependsOn: LambdaCreateUserRole
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: VisualEditor0
+            Effect: Allow
+            Action:
+              - 'lambda:InvokeFunction'
+            Resource:
+              - 'arn:aws:lambda:*'
+          - Sid: VisualEditor1
+            Effect: Allow
+            Action:
+              - 'logs:CreateLogStream'
+              - 'logs:CreateLogGroup'
+              - 'logs:PutLogEvents'
+            Resource:
+              - 'arn:aws:logs:*:*:*'
+          - Sid: VisualEditor2
+            Effect: Allow
+            Action:
+              - 'sns:Publish'
+            Resource:
+              - 'arn:aws:sns:*:*:*'
+      PolicyName: !Sub '${AWS::StackName}-LambdaCreateUserPolicy'
+      Roles:
+        - !Ref LambdaCreateUserRole
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !GetAtt 
+        - CreateUserLambda
+        - Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt 
+        - EventRule
+        - Arn
+Outputs:
+  EventRule:
+    Value: !Ref EventRule
+  CreateUserLambda:
+    Value: !Ref CreateUserLambda
